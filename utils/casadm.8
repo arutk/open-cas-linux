@@ -62,6 +62,19 @@ to the core device. Pass-Through mode may be used in case if user doesn't want t
 cache any workload, for example in case if there are some maintenance operations
 causing cache pollution.
 
+.TP
+.B Write-Invalidate (wi)
+In Write-Invalidate mode write operations are not cached. If write operation is
+issued to a block which is already in cache, corresponding cache lines are
+invalidated.
+
+.TP
+.B Write-Only (wo)
+In Write-Only mode write operations are handled exactly like in Write-Back mode.
+Read operations do not promote data to cache. Reads are typically serviced by
+the core device, unless corresponding cache lines are dirty.
+
+
 .SH COMMANDS
 .TP
 .B -S, --start-cache
