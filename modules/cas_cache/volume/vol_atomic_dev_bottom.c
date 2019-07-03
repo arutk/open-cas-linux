@@ -40,8 +40,6 @@ struct cas_atomic_io {
 
 	uint64_t addr;
 	uint32_t bytes;
-	uint32_t start;
-	uint32_t end;
 
 	int error;
 	unsigned dir:1;
@@ -108,33 +106,10 @@ static struct cas_atomic_io *cas_atomic_alloc(int dir, struct ocf_io *io, bool w
 
 	/* Get number of IOs to be issued */
 	uint32_t ios_count;
-	ocf_cache_t cache = ocf_volume_get_cache(io->volume);
 
 	uint64_t addr = io->addr;
 	uint32_t i, bytes = io->bytes;
-	uint32_t increase_sectors_start = 0, increase_sectors_end = 0;
 	struct cas_atomic_io *atoms;
-
-	if (dir == OCF_WRITE && !write_zero) {
-		/* TODO: this logic is probably no longer required */
-		BUG_ON(!cache);
-		increase_sectors_start =
-				ocf_metadata_check_invalid_before(cache, addr);
-
-		increase_sectors_end =
-				ocf_metadata_check_invalid_after(cache, addr,
-						io->bytes);
-		increase_sectors_start *= 512;
-		increase_sectors_end *= 512;
-
-		if (increase_sectors_start) {
-			bytes += increase_sectors_start;
-			addr -= increase_sectors_start;
-		}
-
-		if (increase_sectors_end)
-			bytes += increase_sectors_end;
-	}
 
 	/* Get number of IOs to be issued */
 	ios_count = DIV_ROUND_UP(bytes, max_io_size);
@@ -173,8 +148,7 @@ static struct cas_atomic_io *cas_atomic_alloc(int dir, struct ocf_io *io, bool w
 		this->bvec_size = cas_atomic_size_of(this->bytes);
 		this->bvec_size = DIV_ROUND_UP(this->bvec_size, PAGE_SIZE);
 
-		if (write_zero || increase_sectors_start ||
-				increase_sectors_end)
+		if (write_zero)
 			this->data = cas_ctx_data_zalloc(this->bvec_size);
 		else
 			this->data = cas_ctx_data_alloc(this->bvec_size);
@@ -189,18 +163,8 @@ static struct cas_atomic_io *cas_atomic_alloc(int dir, struct ocf_io *io, bool w
 		CAS_DEBUG_PARAM("Sub-atomic IO (%u), BIO vector size = %u, "
 				"alignment %u", i, this->bvec_size,
 				this->data->vec[this->bvec_size - 1].bv_len);
-
-		this->start = min(this->bytes, increase_sectors_start);
-		increase_sectors_start -= this->start;
 	}
 	BUG_ON(bytes);
-
-	for (i = ios_count; i && increase_sectors_end; i--) {
-		struct cas_atomic_io *this = &atoms[i - 1];
-
-		this->end = min(this->bytes, increase_sectors_end);
-		increase_sectors_end -= this->end;
-	}
 
 	return atoms;
 
@@ -321,7 +285,7 @@ static int cas_atomic_wr_prepare(struct ocf_io *io,
 	ocf_cache_t cache;
 	struct ocf_atomic_metadata metadata;
 	struct bio_vec_iter dst, src;
-	uint32_t copied, added;
+	uint32_t copied;
 
 	uint64_t addr = atom->addr;
 	uint32_t bytes = atom->bytes;
@@ -336,21 +300,6 @@ static int cas_atomic_wr_prepare(struct ocf_io *io,
 	BUG_ON(bytes % SECTOR_SIZE);
 
 	copied = 0;
-	if (atom->start) {
-		added = cas_atomic_size_of(atom->start);
-		cas_io_iter_move(&dst, added);
-
-		bytes -= atom->start;
-		copied = added;
-
-		addr += atom->start;
-	}
-
-	if (atom->end) {
-		added = cas_atomic_size_of(atom->end);
-		bytes -= atom->end;
-		copied += added;
-	}
 
 	BUG_ON(sizeof(metadata) != OCF_ATOMIC_METADATA_SIZE);
 
@@ -370,7 +319,7 @@ static int cas_atomic_wr_prepare(struct ocf_io *io,
 		addr += SECTOR_SIZE;
 	}
 
-	cas_io_iter_move(&blkio->iter, atom->bytes - (atom->start + atom->end));
+	cas_io_iter_move(&blkio->iter, atom->bytes);
 
 	/* Validate if copied proper numbers of bytes */
 	if (copied != cas_atomic_size_of(atom->bytes)) {
