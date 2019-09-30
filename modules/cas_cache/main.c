@@ -189,7 +189,7 @@ static int __init cas_init_module(void)
 		goto error_cas_ctx_init;
 	}
 
-	printk(KERN_INFO "%s Version %s (%s) (OCF %s) ::Module loaded successfully\n",
+	printk(KERN_INFO "%s Version %s (%s) (OCF %s) iter 2::Module loaded successfully\n",
 		OCF_PREFIX_LONG, CAS_VERSION, CAS_KERNEL,
 		"6e89c7c4ade15eb394053aaec8fdd32cd66ca665");
 
