@@ -191,7 +191,7 @@ static int __init cas_init_module(void)
 
 	printk(KERN_INFO "%s Version %s (%s) (OCF %s) iter 3::Module loaded successfully\n",
 		OCF_PREFIX_LONG, CAS_VERSION, CAS_KERNEL,
-		"a4ad9a52379d6b7eceed8199dc7b9f8451149b4d");
+		"4857118909c30dea4066a19e05c386e6e0cdb411");
 
 	return 0;
 
