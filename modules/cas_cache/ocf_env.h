@@ -386,22 +386,22 @@ static inline int env_atomic_add_unless(env_atomic *a, int i, int u)
 	return atomic_add_unless(a, i, u);
 }
 
-static inline u64 env_atomic64_read(const env_atomic64 *a)
+static inline s64 env_atomic64_read(const env_atomic64 *a)
 {
 	return atomic64_read(a);
 }
 
-static inline void env_atomic64_set(env_atomic64 *a, u64 i)
+static inline void env_atomic64_set(env_atomic64 *a, s64 i)
 {
 	atomic64_set(a, i);
 }
 
-static inline void env_atomic64_add(u64 i, env_atomic64 *a)
+static inline void env_atomic64_add(s64 i, env_atomic64 *a)
 {
 	atomic64_add(i, a);
 }
 
-static inline void env_atomic64_sub(u64 i, env_atomic64 *a)
+static inline void env_atomic64_sub(s64 i, env_atomic64 *a)
 {
 	atomic64_sub(i, a);
 }
@@ -416,12 +416,17 @@ static inline void env_atomic64_dec(env_atomic64 *a)
 	atomic64_dec(a);
 }
 
-static inline u64 env_atomic64_inc_return(env_atomic64 *a)
+static inline s64 env_atomic64_dec_return(env_atomic64 *a)
+{
+	return atomic64_dec_return(a);
+}
+
+static inline s64 env_atomic64_inc_return(env_atomic64 *a)
 {
 	return atomic64_inc_return(a);
 }
 
-static inline u64 env_atomic64_cmpxchg(atomic64_t *a, u64 old, u64 new)
+static inline s64 env_atomic64_cmpxchg(atomic64_t *a, s64 old, s64 new)
 {
 	return atomic64_cmpxchg(a, old, new);
 }
