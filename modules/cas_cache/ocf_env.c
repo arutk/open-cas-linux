@@ -21,7 +21,7 @@ struct _env_allocator {
 	struct kmem_cache *kmem_cache;
 
 	/*!< Number of currently allocated items in pool */
-	atomic_t count;
+//	atomic_t count;
 
 	struct cas_reserve_pool *rpool;
 };
@@ -49,15 +49,15 @@ void *env_allocator_new(env_allocator *allocator)
 	if (item) {
 		memset(item->data, 0, allocator->item_size -
 			sizeof(struct _env_allocator_item));
-		BUG_ON(item->used);
+//		BUG_ON(item->used);
 	} else {
 		item = kmem_cache_zalloc(allocator->kmem_cache, GFP_NOIO);
 	}
 
 	if (item) {
-		item->cpu = cpu;
+/*		item->cpu = cpu;
 		item->used = 1;
-		atomic_inc(&allocator->count);
+		atomic_inc(&allocator->count);*/
 		return &item->data;
 	} else {
 		return NULL;
@@ -179,11 +179,11 @@ void env_allocator_del(env_allocator *allocator, void *obj)
 	struct _env_allocator_item *item =
 		container_of(obj, struct _env_allocator_item, data);
 
-	atomic_dec(&allocator->count);
+/*	atomic_dec(&allocator->count);
 
 	BUG_ON(!item->used);
 	item->used = 0;
-
+*/
 	if (item->from_rpool && !cas_rpool_try_put(allocator->rpool, item,
 			item->cpu)) {
 			return;
@@ -198,23 +198,18 @@ void env_allocator_destroy(env_allocator *allocator)
 		cas_rpool_destroy(allocator->rpool, env_allocator_del_rpool,
 			allocator);
 		allocator->rpool = NULL;
-
+/*
 		if (atomic_read(&allocator->count)) {
 			printk(KERN_CRIT "Not all object deallocated\n");
 			ENV_WARN(true, OCF_PREFIX_SHORT" Cleanup problem\n");
 		}
-
+*/
 		if (allocator->kmem_cache)
 			kmem_cache_destroy(allocator->kmem_cache);
 
 		kfree(allocator->name);
 		kfree(allocator);
 	}
-}
-
-uint32_t env_allocator_item_count(env_allocator *allocator)
-{
-	return atomic_read(&allocator->count);
 }
 
 static int env_sort_is_aligned(const void *base, int align)
