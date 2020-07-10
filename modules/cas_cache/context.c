@@ -15,7 +15,7 @@ struct cas_mpool *cas_bvec_pool;
 
 struct cas_reserve_pool *cas_bvec_pages_rpool;
 
-#define CAS_ALLOC_PAGE_LIMIT 1024
+#define CAS_ALLOC_PAGE_LIMIT ( 1024 )
 #define PG_cas PG_private
 
 #define CAS_LOG_RATELIMIT HZ * 5

@@ -8,7 +8,7 @@
 
 /* *** ALLOCATOR *** */
 
-#define CAS_ALLOC_ALLOCATOR_LIMIT 256
+#define CAS_ALLOC_ALLOCATOR_LIMIT ( 256 )
 
 struct _env_allocator {
 	/*!< Memory pool ID unique name */

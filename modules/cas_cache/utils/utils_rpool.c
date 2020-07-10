@@ -27,7 +27,7 @@
 
 struct _cas_reserve_pool_per_cpu {
 	spinlock_t lock;
-	struct list_head list;
+	struct llist_head llist;
 	atomic_t count;
 };
 
@@ -48,12 +48,19 @@ struct _cas_rpool_pre_alloc_info {
 };
 
 #define RPOOL_ITEM_TO_ENTRY(rpool, item) \
-		(void *)((unsigned long)item + sizeof(struct list_head) \
+		(void *)((unsigned long)item + sizeof(struct llist_node) \
 				- rpool->entry_size)
 
 #define RPOOL_ENTRY_TO_ITEM(rpool, entry) \
-		(struct list_head *)((unsigned long)entry + rpool->entry_size \
-				- sizeof(struct list_head))
+		(struct llist_node *)((unsigned long)entry + rpool->entry_size \
+				- sizeof(struct llist_node))
+
+struct _env_allocator_item {
+	uint32_t cpu : order_base_2(NR_CPUS);
+	uint32_t from_rpool : 1;
+	uint32_t used : 1;
+	char data[] __attribute__ ((aligned (__alignof__(uint64_t))));
+};
 
 void _cas_rpool_pre_alloc_do(struct work_struct *ws)
 {
@@ -61,8 +68,9 @@ void _cas_rpool_pre_alloc_do(struct work_struct *ws)
 			container_of(ws, struct _cas_rpool_pre_alloc_info, ws);
 	struct cas_reserve_pool *rpool_master = info->rpool_master;
 	struct _cas_reserve_pool_per_cpu *current_rpool;
-	struct list_head *item;
+	struct llist_node *item;
 	void *entry;
+	struct _env_allocator_item* allocItem;
 	int i, cpu;
 
 	CAS_DEBUG_TRACE();
@@ -77,8 +85,11 @@ void _cas_rpool_pre_alloc_do(struct work_struct *ws)
 			complete(&info->cmpl);
 			return;
 		}
+		allocItem = entry;
+		allocItem->cpu = cpu;
+
 		item = RPOOL_ENTRY_TO_ITEM(rpool_master, entry);
-		list_add_tail(item, &current_rpool->list);
+		llist_add(item, &current_rpool->llist);
 		atomic_inc(&current_rpool->count);
 	}
 
@@ -107,7 +118,7 @@ void cas_rpool_destroy(struct cas_reserve_pool *rpool_master,
 {
 	int i, cpu_no = num_online_cpus();
 	struct _cas_reserve_pool_per_cpu *current_rpool = NULL;
-	struct list_head *item = NULL, *next = NULL;
+	struct llist_node *item = NULL, *next = NULL;
 	void *entry;
 
 	CAS_DEBUG_TRACE();
@@ -129,9 +140,8 @@ void cas_rpool_destroy(struct cas_reserve_pool *rpool_master,
 		if (!atomic_read(&current_rpool->count))
 			continue;
 
-		list_for_each_safe(item, next, &current_rpool->list) {
+		llist_for_each_safe(item, next, llist_del_all( &current_rpool->llist )) {
 			entry = RPOOL_ITEM_TO_ENTRY(rpool_master, item);
-			list_del(item);
 			rpool_del(allocator_ctx, entry);
 			atomic_dec(&current_rpool->count);
 		}
@@ -180,7 +190,7 @@ struct cas_reserve_pool *cas_rpool_create(uint32_t limit, char *name,
 	for (i = 0; i < cpu_no; i++) {
 		current_rpool = &rpool_master->rpools[i];
 		spin_lock_init(&current_rpool->lock);
-		INIT_LIST_HEAD(&current_rpool->list);
+		init_llist_head(&current_rpool->llist);
 
 		if (_cas_rpool_pre_alloc_schedule(i, &info))
 			goto error;
@@ -196,13 +206,11 @@ error:
 	return NULL;
 }
 
-#define LIST_FIRST_ITEM(head) head.next
-
 void *cas_rpool_try_get(struct cas_reserve_pool *rpool_master, int *cpu)
 {
-	unsigned long flags;
+//	unsigned long flags;
 	struct _cas_reserve_pool_per_cpu *current_rpool = NULL;
-	struct list_head *item = NULL;
+	struct llist_node *item = NULL;
 	void *entry = NULL;
 
 	CAS_DEBUG_TRACE();
@@ -210,6 +218,7 @@ void *cas_rpool_try_get(struct cas_reserve_pool *rpool_master, int *cpu)
 	*cpu = smp_processor_id();
 	current_rpool = &rpool_master->rpools[*cpu];
 
+	/*
 	spin_lock_irqsave(&current_rpool->lock, flags);
 
 	if (!list_empty(&current_rpool->list)) {
@@ -220,6 +229,12 @@ void *cas_rpool_try_get(struct cas_reserve_pool *rpool_master, int *cpu)
 	}
 
 	spin_unlock_irqrestore(&current_rpool->lock, flags);
+	*/
+	item = llist_del_first( &current_rpool->llist );
+	if( item != NULL )
+	{
+		entry = RPOOL_ITEM_TO_ENTRY( rpool_master, item );
+	}
 
 	CAS_DEBUG_PARAM("[%s]Removed item from reserve pool [%s] for cpu [%d], "
 				"items in pool %d", rpool_master->name,
@@ -232,14 +247,14 @@ void *cas_rpool_try_get(struct cas_reserve_pool *rpool_master, int *cpu)
 int cas_rpool_try_put(struct cas_reserve_pool *rpool_master, void *entry, int cpu)
 {
 	int ret = 0;
-	unsigned long flags;
+//	unsigned long flags;
 	struct _cas_reserve_pool_per_cpu *current_rpool = NULL;
-	struct list_head *item;
+	struct llist_node *item;
 
 	CAS_DEBUG_TRACE();
 
 	current_rpool = &rpool_master->rpools[cpu];
-
+/*
 	spin_lock_irqsave(&current_rpool->lock, flags);
 
 	if (atomic_read(&current_rpool->count) >= rpool_master->limit) {
@@ -249,14 +264,15 @@ int cas_rpool_try_put(struct cas_reserve_pool *rpool_master, void *entry, int cp
 
 	item = RPOOL_ENTRY_TO_ITEM(rpool_master, entry);
 	list_add_tail(item, &current_rpool->list);
+*/
+	item = RPOOL_ENTRY_TO_ITEM( rpool_master, entry );
+	llist_add( item, &current_rpool->llist );
 
-	atomic_inc(&current_rpool->count);
-
-error:
+//error:
 	CAS_DEBUG_PARAM("[%s]Added item to reserve pool [%s] for cpu [%d], "
 				"items in pool %d", rpool_master->name,
 				ret == 1 ? "SKIPPED" : "OK", cpu,
 				atomic_read(&current_rpool->count));
-	spin_unlock_irqrestore(&current_rpool->lock, flags);
+//	spin_unlock_irqrestore(&current_rpool->lock, flags);
 	return ret;
 }
