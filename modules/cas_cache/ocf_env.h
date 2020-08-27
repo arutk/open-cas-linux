@@ -76,17 +76,21 @@ static inline void env_secure_free(const void *ptr, size_t size)
 
 /* *** ALLOCATOR *** */
 
-typedef struct _env_allocator env_allocator;
+typedef struct kmem_cache env_allocator;
 
 env_allocator *env_allocator_create(uint32_t size, const char *name);
 
+#define env_allocator_new(allocator) \
+	kmem_cache_zalloc(allocator, GFP_NOIO)
+
+#define env_allocator_new_nozero(allocator) \
+	kmem_cache_alloc(allocator, GFP_NOIO)
+
+#define env_allocator_del(allocator, mem) \
+	kmem_cache_free(allocator, mem)
+
+env_allocator *env_allocator_create(uint32_t size, const char *name);
 void env_allocator_destroy(env_allocator *allocator);
-
-void *env_allocator_new(env_allocator *allocator);
-
-void env_allocator_del(env_allocator *allocator, void *item);
-
-uint32_t env_allocator_item_count(env_allocator *allocator);
 
 /* *** MUTEX *** */
 

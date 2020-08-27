@@ -8,187 +8,6 @@
 
 /* *** ALLOCATOR *** */
 
-#define CAS_ALLOC_ALLOCATOR_LIMIT ( 256 )
-
-struct _env_allocator {
-	/*!< Memory pool ID unique name */
-	char *name;
-
-	/*!< Size of specific item of memory pool */
-	uint32_t item_size;
-
-	/*!< OS handle to memory pool */
-	struct kmem_cache *kmem_cache;
-
-	/*!< Number of currently allocated items in pool */
-//	atomic_t count;
-
-	struct cas_reserve_pool *rpool;
-};
-
-static inline size_t env_allocator_align(size_t size)
-{
-	if (size <= 2)
-		return size;
-	return (1ULL << 32) >> __builtin_clz(size - 1);
-}
-
-struct _env_allocator_item {
-	uint32_t cpu : order_base_2(NR_CPUS);
-	uint32_t from_rpool : 1;
-	uint32_t used : 1;
-	char data[] __attribute__ ((aligned (__alignof__(uint64_t))));
-};
-
-void *env_allocator_new(env_allocator *allocator)
-{
-	struct _env_allocator_item *item;
-
-      	item = kmem_cache_zalloc(allocator->kmem_cache, GFP_NOIO);
-
-	return item ? &item->data : NULL;
-}
-
-static void *env_allocator_new_rpool(void *allocator_ctx, int cpu)
-{
-	env_allocator *allocator = (env_allocator*) allocator_ctx;
-	struct _env_allocator_item *item;
-
-	item = kmem_cache_zalloc(allocator->kmem_cache, GFP_NOIO | __GFP_NORETRY);
-
-	if (item) {
-		item->from_rpool = 1;
-		item->cpu = cpu;
-	}
-
-	return item;
-}
-
-static void env_allocator_del_rpool(void *allocator_ctx, void *_item)
-{
-	struct _env_allocator_item *item = _item;
-	env_allocator *allocator = (env_allocator* ) allocator_ctx;
-
-	BUG_ON(item->used);
-
-	kmem_cache_free(allocator->kmem_cache, item);
-}
-
-#define ENV_ALLOCATOR_NAME_MAX 128
-
-env_allocator *env_allocator_create(uint32_t size, const char *name)
-{
-	int error = -1;
-	bool retry = true;
-
-	env_allocator *allocator = kzalloc(sizeof(*allocator), GFP_KERNEL);
-	if (!allocator) {
-		error = __LINE__;
-		goto err;
-	}
-
-	if (size < CAS_RPOOL_MIN_SIZE_ITEM) {
-		printk(KERN_ERR "Can not create allocator."
-				" Item size is too small.");
-		ENV_WARN(true, OCF_PREFIX_SHORT" Can not create allocator."
-				" Item size is too small.\n");
-		error = __LINE__;
-		goto err;
-	}
-
-	allocator->item_size = size + sizeof(struct _env_allocator_item);
-	if (allocator->item_size > PAGE_SIZE) {
-		printk(KERN_WARNING "Creating allocator with item size"
-			" greater than 4096B");
-		ENV_WARN(true, OCF_PREFIX_SHORT" Creating allocator"
-			" with item size greater than 4096B\n");
-	}
-
-	allocator->name = kstrdup(name, ENV_MEM_NORMAL);
-
-	if (!allocator->name) {
-		error = __LINE__;
-		goto err;
-	}
-
-	/* Initialize kernel memory cache */
-#ifdef CONFIG_SLAB
-RETRY:
-#else
-	(void)retry;
-#endif
-
-	allocator->kmem_cache = kmem_cache_create(allocator->name,
-			allocator->item_size, 0, 0, NULL);
-	if (!allocator->kmem_cache) {
-		/* Can not setup kernel memory cache */
-		error = __LINE__;
-		goto err;
-	}
-
-#ifdef CONFIG_SLAB
-	if ((allocator->item_size < PAGE_SIZE)
-			&& allocator->kmem_cache->gfporder) {
-		/* Goal is to have one page allocation */
-		if (retry) {
-			retry = false;
-			kmem_cache_destroy(allocator->kmem_cache);
-			allocator->kmem_cache = NULL;
-			allocator->item_size = env_allocator_align(allocator->item_size);
-			goto RETRY;
-		}
-	}
-#endif
-
-	/* Initialize reserve pool handler per cpu */
-
-	allocator->rpool = cas_rpool_create(CAS_ALLOC_ALLOCATOR_LIMIT,
-			allocator->name, allocator->item_size, env_allocator_new_rpool,
-			env_allocator_del_rpool, allocator);
-	if (!allocator->rpool) {
-		error = __LINE__;
-		goto err;
-	}
-
-	return allocator;
-
-err:
-	printk(KERN_ERR "Cannot create memory allocator, ERROR %d", error);
-	env_allocator_destroy(allocator);
-
-	return NULL;
-}
-
-void env_allocator_del(env_allocator *allocator, void *obj)
-{
-	struct _env_allocator_item *item =
-		container_of(obj, struct _env_allocator_item, data);
-
-	if (!obj)
-		return;
-
-	kmem_cache_free(allocator->kmem_cache, item);
-}
-
-void env_allocator_destroy(env_allocator *allocator)
-{
-	if (allocator) {
-		cas_rpool_destroy(allocator->rpool, env_allocator_del_rpool,
-			allocator);
-		allocator->rpool = NULL;
-/*
-		if (atomic_read(&allocator->count)) {
-			printk(KERN_CRIT "Not all object deallocated\n");
-			ENV_WARN(true, OCF_PREFIX_SHORT" Cleanup problem\n");
-		}
-*/
-		if (allocator->kmem_cache)
-			kmem_cache_destroy(allocator->kmem_cache);
-
-		kfree(allocator->name);
-		kfree(allocator);
-	}
-}
 
 static int env_sort_is_aligned(const void *base, int align)
 {
@@ -263,4 +82,14 @@ void env_sort(void *base, size_t num, size_t size,
 			swap_fn(base + r, base + c, size);
 		}
 	}
+}
+
+env_allocator *env_allocator_create(uint32_t size, const char *name)
+{
+       return kmem_cache_create(name, size, 64, 0, NULL);
+}
+
+void env_allocator_destroy(env_allocator *allocator)
+{
+       return kmem_cache_destroy(allocator);
 }
