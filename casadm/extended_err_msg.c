@@ -228,7 +228,7 @@ struct {
 	},
 	{
 		KCAS_ERR_STOPPED_DIRTY,
-		"Cache has been stopped with flushing error.\n"
+		"Cache has been stopped without fully flushing dirty data.\n"
 		"Warning: Core devices may contain inconsistent data.\n"
 		"To access your data, please start cache with --load option."
 	},

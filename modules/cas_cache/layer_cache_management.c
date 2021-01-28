@@ -468,6 +468,7 @@ struct _cache_mngt_stop_context {
 	int error;
 	ocf_cache_t cache;
 	struct task_struct *finish_thread;
+	bool cache_dirty;
 };
 
 static void _cache_mngt_cache_priv_deinit(ocf_cache_t cache)
@@ -490,7 +491,7 @@ static int exit_instance_finish(void *data)
 	if (kthread_should_stop())
 		return 0;
 
-	flush_status = ocf_mngt_cache_is_dirty(ctx->cache);
+	flush_status = ctx->cache_dirty;
 	cache_priv = ocf_cache_get_priv(ctx->cache);
 	mngt_queue = cache_priv->mngt_queue;
 
@@ -1017,6 +1018,10 @@ static void cache_mngt_metadata_probe_end(void *priv, int error,
 		cmd_info->metadata_compatible = false;
 		*context->result = 0;
 	} else if (error == -OCF_ERR_METADATA_VER || error == 0) {
+		if (error == -OCF_ERR_METADATA_VER) {
+			printk(KERN_ERR "probe version mismatch, clean %d dirty %d\n",
+				status->clean_shutdown, status->cache_dirty);
+		}
 		cmd_info->is_cache_device = true;
 		cmd_info->metadata_compatible = !error;
 		cmd_info->clean_shutdown = status->clean_shutdown;
@@ -2322,6 +2327,8 @@ int cache_mngt_exit_instance(const char *cache_name, size_t name_len, int flush)
 	status = _cache_mngt_lock_sync(cache);
 	if (status)
 		goto stop_thread;
+
+	context->cache_dirty = ocf_mngt_cache_is_dirty(cache);
 
 	if (!cas_upgrade_is_in_upgrade()) {
 		/* If we are not in upgrade - destroy cache devices */
