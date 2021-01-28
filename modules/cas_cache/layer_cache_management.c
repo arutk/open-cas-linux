@@ -2284,7 +2284,7 @@ int cache_mngt_exit_instance(const char *cache_name, size_t name_len, int flush)
 	ocf_cache_t cache;
 	struct cache_priv *cache_priv;
 	ocf_queue_t mngt_queue;
-	int status = 0, flush_status = 0;
+	int status = 0;
 	struct _cache_mngt_stop_context *context;
 
 	status = ocf_mngt_cache_get_by_name(cas_ctx, cache_name,
@@ -2312,16 +2312,10 @@ int cache_mngt_exit_instance(const char *cache_name, size_t name_len, int flush)
 	 * this time, so we need to flush cache again after disabling
 	 * exported object. The second flush should be much faster.
 	*/
-	if (flush)
+	if (flush) {
 		status = _cache_flush_with_lock(cache);
-	switch (status) {
-	case -OCF_ERR_CACHE_IN_INCOMPLETE_STATE:
-	case -OCF_ERR_FLUSHING_INTERRUPTED:
-	case -KCAS_ERR_WAITING_INTERRUPTED:
-		goto stop_thread;
-	default:
-		flush_status = status;
-		break;
+		if (status)
+			goto stop_thread;
 	}
 
 	status = _cache_mngt_lock_sync(cache);
@@ -2339,10 +2333,6 @@ int cache_mngt_exit_instance(const char *cache_name, size_t name_len, int flush)
 			goto unlock;
 		}
 	} else {
-		if (flush_status) {
-			status = flush_status;
-			goto unlock;
-		}
 		/*
 		 * We are being switched to upgrade in flight mode -
 		 * wait for finishing pending core requests
@@ -2351,10 +2341,14 @@ int cache_mngt_exit_instance(const char *cache_name, size_t name_len, int flush)
 	}
 
 	/* Flush cache again. This time we don't allow interruption. */
+	if (flush) {
+		status = _cache_mngt_cache_flush_uninterruptible(cache);
+		if (status) {
+			/* TODO: what about cas_upgrade_is_in_upgrade() ?? */
+			goto unlock;
+		}
+	}
 	if (flush)
-		flush_status = _cache_mngt_cache_flush_uninterruptible(cache);
-
-	if (flush && !flush_status)
 		BUG_ON(ocf_mngt_cache_is_dirty(cache));
 
 	/* Stop cache device - ignore interrupts */

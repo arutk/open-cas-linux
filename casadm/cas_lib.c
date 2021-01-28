@@ -1167,6 +1167,10 @@ int stop_cache(uint16_t cache_id, int flush)
 				"to operate normally. If you want to stop cache without fully\n"
 				"flushing dirty data, use '-n' option.\n");
 			return INTERRUPTED;
+		// TODO: what about OCF_ERR_CACHE_IN_INCOMPLETE_STATE returned from flush ???
+		} else if (OCF_ERR_DIRTY_EXISTS == cmd.ext_err_code)  {
+			print_err(cmd.ext_err_code);
+			return SUCCESS;
 		} else {
 			cas_printf(LOG_ERR, "Error while removing cache %d\n", cache_id);
 			print_err(cmd.ext_err_code);
