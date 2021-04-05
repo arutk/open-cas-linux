@@ -282,21 +282,6 @@ static void _cas_ctx_cleaner_stop(ocf_cleaner_t c)
 	return cas_stop_cleaner_thread(c);
 }
 
-static int _cas_ctx_metadata_updater_init(ocf_metadata_updater_t mu)
-{
-	return cas_create_metadata_updater_thread(mu);
-}
-
-static void _cas_ctx_metadata_updater_kick(ocf_metadata_updater_t mu)
-{
-	return cas_kick_metadata_updater_thread(mu);
-}
-
-static void _cas_ctx_metadata_updater_stop(ocf_metadata_updater_t mu)
-{
-	return cas_stop_metadata_updater_thread(mu);
-}
-
 #define CAS_LOG_FORMAT_STRING_MAX_LEN 256
 
 static int _cas_ctx_logger_open(ocf_logger_t logger)
@@ -404,12 +389,6 @@ static const struct ocf_ctx_config ctx_cfg = {
 			.init = _cas_ctx_cleaner_init,
 			.kick = _cas_ctx_cleaner_kick,
 			.stop = _cas_ctx_cleaner_stop,
-		},
-
-		.metadata_updater = {
-			.init = _cas_ctx_metadata_updater_init,
-			.kick = _cas_ctx_metadata_updater_kick,
-			.stop = _cas_ctx_metadata_updater_stop,
 		},
 
 		.logger = {
